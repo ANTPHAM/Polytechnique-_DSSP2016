@@ -1,0 +1,515 @@
+---
+title: "London Fire Brigad with dplyr"
+author: "Erwan Le Pennec"
+date: "8 March 2016"
+output:
+  html_document
+---
+
+```{r setup, include=FALSE, purl=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, cache = TRUE, autodep = TRUE, tidy = FALSE)
+```
+
+In this lab, we will work with a dataset provided by the London Fire Brigad which contains around 800 000 incident records from January 2009 to January 2015. 
+The original dataset is available at http://data.london.gov.uk/dataset/london-fire-brigade-incident-records as two xlsx files, which are also in the moodle. 
+
+The goal of today is to see how _easy_ it to use __R__  to import the data, to clean it, to compute summaries and to plot basic information. In order to do this, we will use a few packages available in __R__: __readxl__ to read the excel files, __dplyr__ to manipulate the data, __lubridate__ to cope with the date and __ggplot2__ to visualize the data.
+
+Note that, as often in Data Science, there are several ways to do the same thing. As an example, a variant using a slightly different approach is proposed in a companion script.
+
+# A very short introduction to __R__
+
+## __R__, a DSL dedicated to data analysis
+
+__R__ is a domain specific language dedicated to data analysis. It can be seen an open-source implementation of __S__, a statistical programming language invented in 1976. It is widely used in both the industrial and the academic world. Its main strength is the huge number of packages available while its main drawback is its in-memory processing design which limits the size of the data it can handle. __R__ remains nevertheless a very powerful tools to design a data processing chain.
+
+## __R__ and __RStudio__
+
+__R__ is an interpreted language, typically accessed through a command-line interpreter. __RStudio__ is a __R__ oriented IDE (Integrated Development Environment) that greatly eases the use of __R__. 
+
+In __RStudio__, a console in which command can be entered is available in the bottom left part of the interface. This lab is not a real introduction to __R__ but we are going to look at a few example to understand the basic syntax by using __R__ as calculator:
+
+```{r Intro_1}
+1 + 1 #If we press Enter, R will give the following result
+sin(2) #We can use mathematical function
+a  <- 2 #Store a variable
+a #View it
+exp(a) #Use it
+```
+
+The most important command is, like in most interpreted language, __help__ and we will probably use it a lot.
+
+```{r Intro_2}
+help(exp)
+```
+Note that in __RStudio__, you can also use __F1__ to ask for help.
+
+Instead of working directly in the console, a much better way is to write a script in which the commands can be more easily edited. In __RStudio__, this can be done using the __File__ menu. 
+
+## Package installation
+
+Packages need to be installed in __RStudio__ if this was not already done before. As often with __R__, they are several way to do it: use the __Packages__ tab in __RStudio__, use __install.packages__ in the console,... Once this is done, we will be able to load the libraries or use the function with the __library::__ syntax. In this lab, we will use the __pacman__ package, which, once installed, allow to simultaneously load and install if required the other packages.
+
+```{r}
+install.packages("pacman"")
+library(pacman)
+```
+
+
+# Reading the data
+
+## A first read
+
+The first step is to read the files into __R__. We will use __readxl__ which has a quite straightforward interface.
+
+```{r Read_First}
+pacman::p_load("readxl")
+LFB1 <- read_excel("../LFB/SQL LFB Incident data from Jan2009 - Dec2012.xlsx")
+str(LFB1)
+```
+```{r}
+
+```
+
+The resulting object is a data.frame, which is the array like structure used in R to store columnar data. Internally, it is stored as a list of columns of identical size. 
+
+To manipulate those data.frame, we will use the package __dplyr__ which provides a convenient syntax. For instance, we can have a __glimpse__ on the data.frame.
+
+```{r dplyr}
+pacman::p_load("dplyr")
+glimpse(LFB1)
+```
+
+__RStudio__ includes a basic viewer to __View__ a data.frame.
+
+```{r View, eval = FALSE}
+View(LFB1)
+```
+
+Several observations can be made:
+
+- The first column is an id that should be an integer.
+- The __TimeOfCall__ seems strange.
+- There a few __"NULL"__ values that seems to correspond to a __NA__.
+
+We will see now how to fix those issues.
+
+## A second read
+
+We first cope with the __"NULL"__ strings using a dedicated option of __read\_excel__.
+
+```{r Read}
+LFB1 <- read_excel("../LFB/SQL LFB Incident data from Jan2009 - Dec2012.xlsx", 
+              na = "NULL")
+LFB2 <- read_excel("../LFB/201601 SQL LFB Incident data from Jan2013 - Jan2016.xlsx", 
+              na = "NULL")
+```
+
+Before we fix the last issues, we combine the two data.frame in a single one. 
+
+```{r Bind}
+LFB <- rbind_list(LFB1, LFB2)
+rm(LFB1,LFB2)
+```
+
+If we look at the combined data, we can see that we have no more __"NULL"__values but that the other issues are not yet fixed.
+
+```{r Check}
+glimpse(LFB)
+```
+
+## Modifying the columns
+
+Let's start by converting the __IncidentNumber__ into an integer. We will use __dplyr__ and the __mutate__ command.
+
+```{r FixIncidentNumber}
+LFB <- mutate(LFB, IncidentNumber = as.integer(round(IncidentNumber)))
+glimpse(LFB)
+```
+
+We will often chain a lot of sequences and there is now a _pipe_like system in __R__ thanks to the __magrittr__ package. For instance, the following sequence:
+```{r FixTimeNoEval, eval = FALSE}
+pacman::p_load("lubridate")
+LFB <- mutate(LFB, DateOfCall = DateOfCall + (TimeOfCall - floor_date(TimeOfCall, "day")))
+LFB <- select(LFB, -TimeOfCall)
+```
+can be rewritten in a most compact way:
+```{r FixTime}
+pacman::p_load("magrittr","lubridate")
+LFB %<>% mutate(DateOfCall = DateOfCall + (TimeOfCall - floor_date(TimeOfCall, "day"))) %>%
+  select(-TimeOfCall)
+```
+
+An important concept in __R__ is the concept of factor which corresponds to a variable that can take a finite number of values. Looking at the data, one can see that this is the case for all the variables stored as text.  
+
+```{r FixFactor}
+pacman::p_load("purrr")
+LFB[] %<>% map_if(is_character, factor)
+```
+
+```{r CheckFactor}
+glimpse(LFB)
+```
+
+## A last detail
+
+A very close inspection of the __levels__ of __IncGeo\_BoroughName__ shows a last issue:
+
+```{r Levels}
+levels(LFB$IncGeo_BoroughName)
+```
+
+The names are slightly different in the two xlsx files! We can fix this issue by normalizing all the names.
+
+```{r FixFactor2}
+LFB %<>% mutate(IncGeo_BoroughName = stringr::str_to_title(IncGeo_BoroughName),
+           IncGeo_WardName = stringr::str_to_title(IncGeo_WardName))
+
+LFB[] %<>% map_if(is_character, factor)
+```
+
+```{r LFB}
+glimpse(LFB)
+```
+
+# Dataframe manipulation
+
+__dplyr__ allows to play with a dataframe in a very convenient way. For those of you familiar with SQL, you will probably see the analogy. Note that this analogy is very strong as __dplyr__ can be used even if the dataset is stored in a database....
+
+## A global view
+
+We have already seen the __View__ and the __glimpse__ commands to look at a dataset. Other options includes
+```{r Head}
+head(LFB)
+```
+to look at the first entries or, to obtain a better display in a __Rmd__,
+```{r Kabble, results= 'asis'}
+knitr::kable(head(LFB))
+```
+
+Note that if you don't use the __Rmd__ file then the first display is better...
+
+If one wants to look at subpart of the dataset, one can use the __filter__ command from __dplyr__. For instance, to obtain the events that
+
+```{r Filter1, results= 'asis'}
+LFBMonday <- filter(LFB, wday(DateOfCall, label = TRUE) == "Mon")
+knitr::kable(head(LFBMonday))
+rm(LFBMonday)
+```
+
+__Exercise:__ How to obtain the subset corresponding to False Alarms on a week-end day?
+
+```{r FilterExo, results = 'asis'}
+LFBExo <- filter(LFB, IncidentGroup == "False Alarm", wday(DateOfCall, label = TRUE) %in% c("Sat","Sun"))
+knitr::kable(head(LFBExo))
+rm(LFBExo)
+```
+
+## Summarizing the data
+
+__R__ includes a very convenient command to __summarize__ a dataset:
+```{r Summary}
+summary(LFB)
+```
+
+It computes a lot of statistics for each column of the dataset. Note that the statistics computed depends on the type of the column.
+
+Those statistics can be computed _manually_ using the __summarize__ command:
+```{r Summarize}
+LFB %>% summarize(medNumPumpsAttending = median(NumPumpsAttending, na.rm = TRUE), meanNumPumpsAttending = mean(NumPumpsAttending, na.rm = TRUE))
+LFB %>% summarize(NbIncidentGroup = n(), NAIncidentGroup = sum(is.na(IncidentGroup)))
+```
+
+This command can be combined with the filter command to compute a statistics on a subset:
+```{r FilterSummarize}
+LFB %>% filter(wday(DateOfCall, label = TRUE) == "Mon") %>% summarize(NbIncidentGroup = n(), NAIncidentGroup = sum(is.na(IncidentGroup)))
+```
+
+__Exercise:__ Compute the average __FirstPumpArriving_AttendanceTime__ on __Fire__ events during the week-end and during the week.
+
+```{r FilterSummarizeExo}
+LFB %>% filter(IncidentGroup == "Fire", wday(DateOfCall, label = TRUE) %in% c("Sat","Sun")) %>%
+  summarize(meanTime = mean(FirstPumpArriving_AttendanceTime, na.rm = TRUE))
+LFB %>% filter(IncidentGroup == "Fire", !(wday(DateOfCall, label = TRUE) %in% c("Sat","Sun"))) %>%
+  summarize(meanTime = mean(FirstPumpArriving_AttendanceTime, na.rm = TRUE))
+```
+
+
+## Split-Apply-Combine strategy
+
+The Split-Apply-Combine strategy is a very natural way to process a dataset:
+1. Split the data in groups
+2. Apply a procedure on each of those groups
+3. Combine those results
+
+We will see that __R__ and __dplyr__ are well suited to do this thanks to the __group\_by__ command:
+
+```{r GroupBySummarize}
+LFBIncidentGroup <- LFB %>% group_by(IncidentGroup) %>% summarize(N = n())
+LFBIncidentGroup
+```
+
+__Exercise:__ Compute the average __FirstPumpArriving_AttendanceTime__ on __Fire__ events during the week-end and during the week in a single command.
+
+```{r GroupBySummarizeExo}
+LFB %>% filter(IncidentGroup == "Fire") %>%
+  group_by( weekend = (wday(DateOfCall, label = TRUE) %in% c("Sat","Sun"))) %>%
+  summarize(meanTime = mean(FirstPumpArriving_AttendanceTime, na.rm = TRUE))
+```
+
+
+Note that the operations can be further chained. For instance, to compute the proportion of each IncidentGroup by weekday:
+```{r SummarizeChain}
+LFB %>% group_by(wday = wday(DateOfCall, label = TRUE), IncidentGroup) %>%
+  summarize(N = n()) %>% mutate(prop = N/sum(N))
+```
+
+Note that we have used the fact that a summarize only remove on level of grouping so that after the resulting data.frame is still grouped by __wday__.
+
+__Exercise:__ Compute the mean and the standard deviation of the number of incidents by day for each IncidentGroup.
+
+```{r SummarizeChainExo}
+LFB %>% group_by(IncidentGroup, day = day(DateOfCall)) %>%
+  summarize(N = n()) %>%
+  summarize(meanN = mean(N), sdN = sd(N))
+```
+
+## Reshaping the data
+
+We conclude our tour of data manipulation by showing how to go from a _long_ table to a _wide_ table... and the other way around.
+
+A _long_ table is a table in which each line corresponds to a _measurement_. This is the most convenient way to deal with the data but is far from being efficient from a storage point of view. An example is given by the following table in which the number of events by IncidentGroup and Weekday is stored:
+
+```{r LongTable}
+LFBIncidentGroupWday <- LFB %>% group_by(IncidentGroup, wday = wday(DateOfCall, label = TRUE)) %>% summarize(N = n())
+LFBIncidentGroupWday
+```
+
+The __tidyr__ package provides a command __spread__ to transform this table in a _wide_ format in which in each line appears several related measurements.
+
+```{r Tidyr}
+pacman::p_load("tidyr")
+LFBIncidentGroupWdayW <- spread(LFBIncidentGroupWday, wday, N, fill = 0)
+LFBIncidentGroupWdayW
+```
+
+We can go back to the original table thanks to the __gather__ command:
+
+```{r Gather}
+LFBIncidentGroupWday2 <- gather(LFBIncidentGroupWdayW, wday, N, - IncidentGroup)
+LFBIncidentGroupWday2
+```
+
+__Exercise:__ Compute and display in a table the number of incidents by weekday and hour by IncidentGroup and globally.
+
+```{r GroupWdayHour, results = 'asis'}
+LFBWdayHourIncidentGroup <- LFB %>%
+  group_by(wday = wday(DateOfCall, label = TRUE), hour = hour(DateOfCall), IncidentGroup) %>%
+  summarize(N = n())
+LFBWdayHour <- LFBWdayHourIncidentGroup %>% summarize(N = sum(N))
+
+LFBWdayHourIncidentGroupW <- LFBWdayHourIncidentGroup %>% group_by(IncidentGroup) %>%
+  nest() %>% mutate(data = map(data, ~ spread_(.x, "hour", "N", fill = 0)))
+
+LFBWdayHourW <- spread(LFBWdayHour, hour, N, fill = 0)
+
+for (i in 1:nrow(LFBWdayHourIncidentGroupW)) {
+print(knitr::kable(LFBWdayHourIncidentGroupW$data[[i]],
+             caption = LFBWdayHourIncidentGroupW$IncidentGroup[[i]]))
+}
+
+knitr::kable(LFBWdayHourW)
+```
+
+## Join
+
+Joining two tables together is also possible in __R__ for example with the __$\_join__ family of __dply__.
+
+We will see some example during the next lab.
+
+# Visualization
+
+In this part, we will show a few visualization examples ranging from basic to quite advanced one. We will use the very powerful __ggplot2__ package
+
+## Table and bar plots
+
+Bar plots are a convenient way to visualize tables.
+
+```{r Histo}
+pacman::p_load("ggplot2")
+ggplot(data = LFBIncidentGroup, aes(x = IncidentGroup, y = N, fill = IncidentGroup)) + geom_bar(stat = "identity")
+```
+
+Note that the very same plot could have been computed directly from the original dataset:
+
+```{r HistoFromScratch}
+ggplot(data = LFB, aes(x = IncidentGroup, fill = IncidentGroup)) + geom_bar()
+```
+
+The summary that we had computed manually is computed automatically in this case...
+
+We can look at the variation with respect to the day by 
+
+- faceting the data
+
+```{r HistoFacet}
+ggplot(data = mutate(LFB, wday = wday(DateOfCall, label = TRUE)),
+       aes(x = IncidentGroup, fill = IncidentGroup)) +
+  geom_bar() + facet_wrap(~ wday)
+```
+
+- stacking the bars
+
+```{r HistoWday}
+ggplot(data = mutate(LFB, wday = wday(DateOfCall, label = TRUE)),
+       aes(x = wday, fill = IncidentGroup)) +
+  geom_bar()
+```
+
+- or looking at the conditional proportions...
+
+```{r HistoWdayFill}
+ggplot(data = mutate(LFB, wday = wday(DateOfCall, label = TRUE)),
+       aes(x = wday, fill = IncidentGroup)) +
+  geom_bar(position = "fill")
+```
+
+
+__Exercise:__ What about the repartition of the __IncGeo\_BoroughName__?
+
+```{r Borough}
+ggplot(data = LFB, aes(x = IncGeo_BoroughName)) + geom_bar() 
+
+ggplot(data = {LFB %>% group_by(IncGeo_BoroughName) %>% summarize(N = n())}, aes(x = reorder(IncGeo_BoroughName,N), y = N)) + geom_bar(stat = "identity") + coord_flip()
+
+ggplot(data = {LFB %>% group_by(IncGeo_BoroughName) %>% summarize(N = n())}, aes(x = reorder(IncGeo_BoroughName,N), y = N)) + geom_point() + coord_flip()
+```
+
+
+## Maps
+
+__ggmap__ is an extension of __ggplot2__ dedicated to maps. We will use them after a tedious conversion of the coordinates into the metric system...
+
+```{r Conversion, cache.vars = "LFB"}
+wgs84 = "+init=epsg:4326"
+bng = '+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +datum=OSGB36 +units=m +no_defs'
+
+if (!pacman::p_isinstalled("sp")) { pacman::p_install("sp") }
+if (!pacman::p_isinstalled("rgdal")) { pacman::p_install("rgdal") }
+
+ConvertCoordinates <- function(easting,northing) {
+  out = cbind(long_tmp = easting,lat_tmp = northing)
+  mask = !is.na(easting)
+  sp <- sp::spTransform(sp::SpatialPoints(list(easting[mask],northing[mask]),proj4string=sp::CRS(bng)),sp::CRS(wgs84))
+  out[mask,]=sp@coords
+  out
+}
+
+LFB %<>% do({
+  tmp <- ConvertCoordinates(.$Easting_rounded, .$Northing_rounded);
+  mutate(., long_rounded = tmp[,1], lat_rounded = tmp[,2])})
+
+LFB %<>% do({
+  tmp <- ConvertCoordinates(.$Easting_m, .$Northing_m);
+  mutate(., long = tmp[,1], lat = tmp[,2])})
+```
+
+We can now use __gmap__ to get a London map
+```{r Ggmap}
+pacman::p_load("ggmap")
+mapLondon <- get_map(location = c(-0.6, 51.25, 0.4, 51.75), source = "google")
+ggmap(mapLondon) + coord_quickmap(expand = FALSE)
+```
+
+We can add the events on the map: 
+```{r MapEvents}
+ggmap(mapLondon) + geom_point(data = LFB, aes(x = long_rounded, y = lat_rounded, color = IncidentGroup)) + coord_quickmap(expand = FALSE)
+```
+
+```{r MapEventsAlpha}
+ggmap(mapLondon) + geom_point(data = LFB, aes(x = long_rounded, y = lat_rounded,
+                                              color = IncidentGroup),
+                              alpha = .01) +
+  scale_color_discrete(guide = guide_legend(override.aes = list(alpha = 1))) + coord_quickmap(expand = FALSE)
+
+ggmap(mapLondon) + geom_point(data = LFB,
+                              aes(x = long_rounded, y = lat_rounded,
+                                  color = IncidentGroup),
+                              alpha = .01) +
+  scale_color_discrete(guide = guide_legend(override.aes = list(alpha = 1))) +
+  coord_quickmap(expand = FALSE) +
+  facet_wrap(~ IncidentGroup)
+```
+
+__Exercise:__ Can you obtain a better view?
+```{r Ggmap2}
+mapLondon <- get_map(location = c(-0.21, 51.431, 0.01, 51.57), source = "google")
+ggmap(mapLondon)+ coord_quickmap(expand = FALSE)
+```
+
+## A much more complex visualization
+
+We may be interested by a visualization of the number of hourly incidents for a given date with respect to the _usual_ number of hourly incidents. A classical way to visualize this is to compute the quantiles of the hourly, to display them on a graph and to overlay the number for a given day.
+
+__ggplot2__ allows a construction of such a graph as soon as the quantiles are computed.
+
+We need first to compute the number of events for every hour:
+
+```{r EventsByHour}
+LFBHour <- LFB %>%
+  group_by(DateOfCall = floor_date(DateOfCall, "hour")) %>%
+  summarize(N = n())
+
+LFBHour %<>%
+mutate(hour = hour(DateOfCall), DateOfCall = floor_date(DateOfCall, "day")) %>%
+complete(hour,DateOfCall, fill = list(N = 0)) %>%
+  mutate(DateOfCall = force_tz(DateOfCall + dhours(hour), "UTC")) %>% select(-hour)
+```
+
+Note that the absence of value in the first step for a given hour means that there was no events and not that there is a missing value, hence the second part.
+
+The quantiles can be computed by this (not so simple) sequence of commands.
+
+```{r Quant}
+Probs <- seq(0,1,.01)
+Quant <- LFBHour %>% group_by(hour = hour(DateOfCall)) %>%
+  do(data.frame(Quant = quantile(.$N, Probs), Probs = Probs)) %>%
+  group_by(hour) %>%
+  mutate(QuantN = lead(Quant), ProbsN = lead(Probs))
+```
+
+A first visualization of the quantiles is obtained easily:
+
+```{r Plot}
+ggplot(data = mutate(Quant, ProbsM = (Probs+ProbsN)/2)) + geom_ribbon(aes(x = hour, ymin = Quant, ymax = QuantN,
+                                       fill = ProbsM,
+                                       group = Probs))
+```
+
+This visualization can be enhanced thanks to the __ggplot2__ syntax:
+
+```{r PlotEnhanced}
+ProbsShort <- seq(0,1,.1)
+p <- ggplot(data = mutate(Quant, ProbsM = (Probs+ProbsN)/2)) + geom_ribbon(aes(x = hour, ymin = Quant, ymax = QuantN,
+                                       fill = ProbsM,
+                                       group = Probs, alpha = ProbsM)) +
+  geom_line(data = filter(Quant, Probs == .5), aes(x = hour, y = Quant, group = Probs), linetype = "dashed") +
+  scale_fill_gradientn(values = c(0,.75,1), colors = c("green", "orange", "red"),
+                       guide = guide_legend(name = "legend", title = "Quantile"), trans = 'identity', breaks = rev(ProbsShort)) +
+scale_alpha_continuous(guide = guide_legend(name = "legend", title = "Quantile"),
+                       trans = scales::trans_new("",function(x) { (1-x)^(1/10)}, function(x) {1-x^10}, domain = c(0,1)),
+                       breaks = rev(ProbsShort)) +
+  xlab("Hour") + ylab("Nb of events") + coord_cartesian(ylim = c(0,50))
+p
+```
+
+We can then overlay the data for a given day:
+
+```{r PlotOverlay}
+DayOfInterest <- dmy("04/05/2015", tz = "UTC")
+p + geom_line(data = filter(LFBHour, floor_date(DateOfCall, "day") == DayOfInterest),
+                             aes(x = hour(DateOfCall), y = N,
+                                 group = floor_date(DateOfCall, "day"))) +
+  ggtitle(sprintf("Events on %s",format(DayOfInterest,"%d/%m/%Y")))
+```
+
