@@ -1,0 +1,631 @@
+---
+title: "Visualization Examples"
+author: "Erwan Le Pennec / Eric Matzner"
+date: "Spring 2016"
+output: 
+  html_document: 
+    self_contained: no
+---
+
+```{r Knitr_Global_Options, include=FALSE}
+library("knitr")
+opts_chunk$set(warning = FALSE, message = FALSE, cache = TRUE, autodep = TRUE, tidy = FALSE)
+library("rgl")
+knit_hooks$set(webgl = hook_webgl)
+```
+
+
+# Anscombe quartet
+
+```{r Anscombe}
+library("dplyr")
+library("ggplot2")
+
+anscombe1 <- transmute(anscombe, example = 1, x = x1, y = y1)
+anscombe2 <- transmute(anscombe, example = 2, x = x2, y = y2)
+anscombe3 <- transmute(anscombe, example = 3, x = x3, y = y3)
+anscombe4 <- transmute(anscombe, example = 4, x = x4, y = y4)
+
+ggplot(data = rbind(anscombe1, anscombe2, anscombe3, anscombe4), aes(x=x,y=y)) +
+  geom_point() + geom_smooth(method = "lm", fullrange = TRUE) + 
+  facet_wrap( ~ example, ncol = 2)
+```
+
+# Playfair
+
+```{r Playfair}
+library("HistData")
+library("reshape2")
+ggplot(data = melt(Wheat, "Year"), aes(x = Year, y = value, color = variable)) + geom_step()
+
+ggplot(data = Wheat, aes(x=Year)) + geom_step(aes(y=Wheat/Wages))
+
+ggplot(data = Wheat, aes(x=Year)) + geom_step(aes(y=Wheat/Wages)) + scale_y_continuous(limits=c(0,NA))
+```
+
+# Nightingale
+```{r Nightingale}
+Nightingale2 <- melt(Nightingale, "Date", c("Wounds", "Other", "Disease"))
+
+ggplot(data = filter(Nightingale2, Date <= "1855-03-02"), aes(x = as.factor(Date))) + geom_bar(aes(y= value, fill = variable), color = "black", width = 1, stat = "identity") + coord_polar(start = -pi/2, direction = 1) + scale_y_sqrt()
+
+ggplot(data = filter(Nightingale2, Date > "1855-03-02"), aes(x = as.factor(Date))) + geom_bar(aes(y= value, fill = variable), color = "black", width = 1, stat = "identity") + coord_polar(start = -pi/2, direction = 1) + scale_y_sqrt()
+
+ggplot(data = filter(Nightingale2, Date <= "1855-03-02"), aes(x = as.factor(Date))) + geom_bar(aes(y= value, fill = variable), color = "black", width = 1, stat = "identity") + coord_polar(start = -pi/2, direction = 1)
+
+ggplot(data = filter(Nightingale2, Date <= "1855-03-02"), aes(x = as.factor(Date))) + geom_bar(aes(y= value, fill = variable), color = "black", width = 1, stat = "identity")
+
+ggplot(Nightingale2, aes(x = as.factor(Date))) + geom_bar(aes(y= value, fill = variable), color = "black", width = 1, stat = "identity")
+
+ggplot(data = summarise(group_by(Nightingale2, variable), value = sum(value)), aes(x = variable, y = value, fill = variable)) + geom_bar(stat = "identity")
+```
+
+# Challenger
+```{r Challenger}
+data(challeng, package = "alr3")
+
+ggplot(data = filter(challeng, Fail > 0), aes(x = Temp, y = Fail)) + geom_point(size = 5)
+
+ggplot(data = filter(challeng, Fail > 0), aes(x = Temp, y = Fail)) + geom_point(size = 5) + geom_smooth(method = "lm", formula = y ~ poly(x,2))
+
+ggplot(data = challeng, aes(x = Temp, y = Fail)) + geom_point(size = 5)
+
+ggplot(data = challeng, aes(x = Temp, y = Fail)) + geom_point(size = 5) + geom_smooth(method = "lm", formula = y ~ poly(x,2))
+
+ggplot(data = challeng, aes(x = Temp, y = Fail)) + geom_point(size = 5) + geom_smooth(method = "lm", formula = y ~ poly(x,2), fullrange = TRUE) + scale_x_continuous(limit = c(32,NA))
+```
+
+# Pie plot
+
+```{r Pie}
+ggplot(data = diamonds, aes(x = factor(1), fill = cut)) + geom_bar(width = 1) +
+  coord_polar(theta = "y") + xlab("") + ylab("") +
+  theme(axis.ticks = element_blank(), axis.text.y = element_blank())
+```
+
+# Bar
+
+```{r Bar}
+ggplot(data = diamonds, aes(x = cut, fill = cut)) + geom_bar()
+```
+
+# Cleveland Dot
+
+```{r Cleveland_Dot}
+ggplot(data = diamonds, aes(x = cut)) + 
+  geom_point(stat = "count", size = 5) +  coord_flip() +
+  theme(panel.grid.major.x = element_blank() ,
+        panel.grid.major.y = element_line(linetype=3, color="darkgray"))
+
+ggplot(data = diamonds, aes(x = cut, color = cut, fill = cut)) + 
+  geom_point(stat = "count", size = 5) +
+  geom_bar(width = .01) + coord_flip() +
+  theme(panel.grid.major.x = element_blank() ,
+        panel.grid.major.y = element_line(linetype=3, color="darkgray"))
+
+ggplot(data = add_rownames(mtcars), aes(x = reorder(rowname,mpg), y = mpg, color = cyl)) + geom_point(size = 3) + coord_flip() + xlab("") +
+  theme(panel.grid.major.x = element_blank() ,
+        panel.grid.major.y = element_line(linetype=3, color="darkgray"))
+```
+
+# Histogram and density
+
+```{r Histo}
+ggplot(data = diamonds, aes(x = price)) + geom_histogram()
+
+ggplot(data = diamonds, aes(x = price)) + geom_histogram(binwidth = 15)
+
+ggplot(data = diamonds, aes(x = price)) + geom_density()
+
+ggplot(data = diamonds, aes(x = price)) + geom_density(adjust = .01)
+```
+
+# Boxplot and violin plot
+
+```{r Box}
+ggplot(data = diamonds, aes(x = factor(1), y = price)) + geom_boxplot()
+
+ggplot(data = diamonds, aes(x = factor(1), y = price)) + geom_violin()
+```
+
+# Dot plot
+
+```{r Dotplot}
+small_diamonds <- sample_frac(diamonds,.01)
+
+ggplot(data = small_diamonds, aes(x = factor(1), y = price)) +
+  geom_dotplot(binaxis = "y", stackdir = "center", stackratio = 1.25, dotsize = .25)
+
+ggplot(data = small_diamonds, aes(x = factor(1), y = price)) +
+  geom_dotplot(binaxis = "y", stackdir = "center", stackratio = 1.25, dotsize = .25) +
+  stat_summary(fun.y = median, geom = "point", size = 5, color = "red")
+```
+
+# Stem
+
+```{r Stem}
+stem(small_diamonds[["price"]], scale = 3)
+```
+
+# Grouping
+
+```{r Grouping}
+ggplot(data = diamonds, aes(x = price, color = cut)) + geom_density()
+
+ggplot(data = diamonds, aes(x = price, fill = cut)) + geom_density(position = "stack")
+
+ggplot(data = diamonds, aes(x = price, color = cut, fill = cut)) +
+  geom_density() + facet_wrap(~ cut)
+
+ggplot(data = diamonds, aes(x = cut, y = price)) + geom_violin()
+
+ggplot(data = small_diamonds, aes(x = cut, y = price)) +
+  geom_dotplot(binaxis = "y", stackdir = "center", stackratio = 1.25, dotsize = .25) +
+  stat_summary(fun.y = median, geom = "point", size = 5, color = "red")
+
+ggplot(data = small_diamonds, aes(x = factor(1), y = price, color = cut)) +
+  geom_dotplot(binaxis = "y", stackdir = "center", stackratio = 1.25, dotsize = .25, binpositions = "all", stackgroups =  TRUE) +
+  stat_summary(fun.y = median, geom = "point", size = 5, color = "red")
+```
+
+# Scatter Plots
+
+```{r Scatter_Plots}
+ggplot(data = diamonds, aes(x = carat, y = price)) + geom_point()
+
+ggplot(data = diamonds, aes(x = carat, y = price, color = cut)) + geom_point()
+
+ggplot(data = diamonds, aes(x = carat, y = price, color = cut)) + geom_point(alpha = .25)
+
+ggplot(data = diamonds, aes(x = carat, y = price, color = cut)) + geom_point(alpha = .25) + facet_wrap( ~ cut)
+```
+
+# Smoothing
+
+```{r Smoothing}
+ggplot(data = diamonds, aes(x = carat, y = price)) + geom_point() +
+  geom_smooth()
+
+ggplot(data = diamonds, aes(x = carat, y = price, color = cut)) +
+  geom_point(alpha = .25) + geom_smooth()
+```
+
+# Decoration
+
+```{r Decoration}
+ggplot(data = mtcars, aes(x = hp, y = mpg, size = gear, color = cyl, shape = factor(am))) + geom_point() + scale_size_continuous(range = c(4,8))
+```
+
+# Scatter Plot Matrix
+
+```{r Scatter_Plot_Matrix}
+library(GGally)
+ggpairs(mtcars)
+```
+
+# Parallel Coordinates and Radar Plots
+
+```{r Parallel_Coordinates}
+# rescale all variables to lie between 0 and 1
+scaled <- as.data.frame(lapply(mtcars, ggplot2:::rescale01))
+scaled$model <- rownames(mtcars)    # add model names as a variable
+mtcarsm <- reshape2::melt(scaled)
+
+ggplot(mtcarsm, aes(x = variable, y = value)) +
+  geom_line(aes(group = model, color = model), size = 2) +
+  theme(strip.text.x = element_text(size = rel(0.8)),
+        axis.text.x = element_text(size = rel(0.8))) +
+  guides(color = guide_legend(ncol=2))
+
+ggplot(mtcarsm, aes(x = variable, y = value)) +
+  geom_line(aes(group = model, color = model), size = 2) +
+  theme(strip.text.x = element_text(size = rel(0.8)),
+        axis.text.x = element_blank(),
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank()) +
+  guides(color = "none") + facet_wrap(~ model)
+```
+
+```{r Radar_Plots}
+coord_radar <- function (theta = "x", start = 0, direction = 1) 
+{
+    theta <- match.arg(theta, c("x", "y"))
+    r <- if (theta == "x") 
+        "y"
+    else "x"
+    ggproto("CordPolar", CoordPolar, theta = theta, r = r, start = start, 
+        direction = sign(direction),
+        is_linear = function(coord) TRUE)
+}
+
+ggplot(mtcarsm, aes(x = variable, y = value)) +
+  geom_polygon(aes(group = model, color = model), fill = NA, size = 1, show.legend = FALSE)  +
+  coord_radar() +
+  facet_wrap( ~ model, nrow = 4) +
+  guides(color = guide_legend(ncol=2)) +
+  theme(strip.text.x = element_text(size = rel(0.8)),
+        axis.text.x = element_text(size = rel(0.8)),
+        axis.ticks.y = element_blank(),
+        axis.text.y = element_blank())
+
+ggplot(mtcarsm, aes(x = variable, y = value)) +
+  geom_polygon(aes(group = model, color = model), fill = NA, size = 2, show.legend = FALSE) +
+  geom_path(aes(group = model, color = model), size = 2) +
+  coord_radar() + 
+  theme(strip.text.x = element_text(size = rel(0.8)),
+        axis.text.x = element_text(size = rel(0.8))) +
+  guides(color = guide_legend(ncol=2))
+```
+
+```{r Alluvial}
+library(alluvial)
+tit <- as.data.frame(Titanic)
+alluvial( tit[,1:4], freq=tit$Freq, border=NA,
+         hide = tit$Freq < quantile(tit$Freq, .50),
+         col=ifelse( tit$Survived == "No", "red", "gray") )
+```
+
+# Time Series
+
+```{r Time_Series}
+library(quantmod)
+tckrs <- c("SPY", "QQQ", "GDX", "DBO", "VWO")
+getSymbols(tckrs, from = "2007-01-01")
+SPY.Close <- SPY[,4]
+QQQ.Close <- QQQ[,4]
+GDX.Close <- GDX[,4]
+DBO.Close <- DBO[,4]
+VWO.Close <- VWO[,4]
+SPY1 <- as.numeric(SPY.Close[1])
+QQQ1 <- as.numeric(QQQ.Close[1])
+GDX1 <- as.numeric(GDX.Close[1])
+DBO1 <- as.numeric(DBO.Close[1])
+VWO1 <- as.numeric(VWO.Close[1])
+SPY <- SPY.Close/SPY1
+QQQ <- QQQ.Close/QQQ1
+GDX <- GDX.Close/GDX1
+DBO <- DBO.Close/DBO1
+VWO <- VWO.Close/VWO1
+basket <- add_rownames(as.data.frame(cbind(SPY, QQQ, GDX, DBO, VWO)), var = "date")
+basket <- mutate(basket, date = as.Date(date))
+library("reshape2")
+basket_melt <- melt(basket, "date")
+
+ggplot(data = basket_melt, aes(x = date, y = value, color = variable)) + geom_line()
+
+ggplot(data = basket_melt, aes(x = date, y = value, color = variable)) + geom_line() + facet_wrap( ~ variable)
+```
+
+# Time Line
+
+```{r Time_Line}
+library(timeline)
+data(ww2)
+timeline(ww2, ww2.events, event.spots=2, event.label="", event.above=FALSE)
+```
+
+# Choroplet
+
+```{r Choroplet}
+st <- map_data('state')
+data(votes.repub)
+colnames(votes.repub) <- paste("Y", colnames(votes.repub), sep="")
+votes.repub <- mutate(add_rownames(as.data.frame(votes.repub), "region"), region = tolower(region))
+st <- left_join(st, votes.repub, by = "region")
+
+ggplot(st, aes(long, lat, group=group, fill = Y1960)) +
+    geom_polygon() + scale_fill_continuous(limits = c(20,80))
+
+st_melt <- melt(st, c("long","lat","group","order","region","subregion"))
+
+ggplot(st_melt, aes(long, lat, group=group, fill = value)) +
+    geom_polygon() + scale_fill_continuous(limits = c(20,80)) + facet_wrap(~ variable)
+```
+
+# Symbol Maps
+
+```{r Symbols_Map}
+DecauxKey <- "da879af595184f071c181408b837b7da636f924f"
+UrlDecaux <- function(decaux,key) {
+  if (grepl('\\?',decaux, perl = TRUE)) {
+    delim <- '&'
+  }
+  else {
+      delim <- '?'
+  }
+  sprintf("https://api.jcdecaux.com/vls/v1/%s%sapiKey=%s",decaux,delim,key)
+}
+
+GetJsonDecaux <- function(decaux, key = DecauxKey) {
+  jsonlite::fromJSON(UrlDecaux(decaux,key), flatten = TRUE)
+}
+
+Contracts <- GetJsonDecaux("contracts")
+DecauxContractName <- filter(Contracts, commercial_name == "Velib")[["name"]]
+Stations <- GetJsonDecaux(sprintf("stations?contract=%s", DecauxContractName))
+Stations <- mutate(Stations, status = factor(status, level=c("CLOSED","OPEN")))
+Stations <- mutate(Stations, contract_name = factor(contract_name))
+Stations <- mutate(Stations, date = as.POSIXct(last_update/1000, origin = "1970-01-01"))
+StationsDate <- max(Stations[,'date'])
+
+location.lat.max <- max(Stations[["position.lat"]])
+location.lat.min <- min(Stations[["position.lat"]])
+location.lat.width <- location.lat.max-location.lat.min
+location.lng.max <- max(Stations[["position.lng"]])
+location.lng.min <- min(Stations[["position.lng"]])
+location.lng.width <- location.lng.max-location.lng.min
+location.box <- c(location.lat.min-.05*location.lat.width,
+                  location.lat.max+.05*location.lat.width,
+                  location.lng.min-.05*location.lng.width,
+                  location.lng.max+.05*location.lng.width)
+names(location.box) <- c("bottom", "top", "left", "right")
+
+library(ggmap)
+map.Decaux.raw <- get_map(location.box, source = "google", 
+                  maptype = "roadmap")
+map.Decaux <- ggmap(map.Decaux.raw, extent = "device")
+
+map.avail <- map.Decaux + geom_point(data = Stations, 
+                       aes(x = position.lng, y = position.lat, 
+                           col = available_bikes/bike_stands, 
+                           size = bike_stands),
+                       alpha = .85) + 
+  scale_size_continuous(range = c(.5,3), name = "Bike stands") +
+  scale_color_gradient(limits = c(0,1), name = "Bike availability") +
+  ggtitle("Bike availability") +
+  theme(plot.title = element_text(size = 20))
+map.avail
+```
+
+# Density and contours
+
+```{r Density_2D}
+StationsRep <- Stations[rep(1:nrow(Stations), Stations$bike_stands),]
+
+map.Decaux + 
+  stat_density_2d(data = StationsRep, 
+                 aes(x = position.lng, y = position.lat, 
+                     alpha = ..level.. ,  fill = ..level..), 
+                 contour = TRUE, geom = "polygon") +  scale_alpha_continuous(guide = "legend") + scale_fill_continuous(guide = "legend")
+```
+
+# Cartogram
+
+```{r Cartogram}
+library(GISTools)
+library(Rcartogram)
+library(getcartr)
+data(georgia)
+georgia.carto <- quick.carto(georgia,georgia$TotPop90)
+georgia.carto_fortify <- left_join(fortify(georgia.carto, region = "Name"), dplyr::select(georgia.carto@data, Name, TotPop90), by = c("id" = "Name"))
+ggplot(data = georgia.carto_fortify, aes(x = long, y = lat, group = group, fill = TotPop90)) + geom_polygon()
+
+georgia_fortify <- left_join(fortify(georgia, region = "Name"), dplyr::select(georgia@data, Name, TotPop90), by = c("id" = "Name"))
+ggplot(data = georgia_fortify, aes(x = long, y = lat, group = group, fill = TotPop90)) + geom_polygon()
+```
+
+# Tree
+
+```{r Tree}
+library(rpart)
+library(rpart.plot)
+
+data(airquality)
+airq <- subset(airquality, !is.na(Ozone))
+airct <- rpart(Ozone ~ ., data = airq, control = rpart.control(minsplit = 10))
+
+rpart.plot(airct)
+prp(airct, type = 2, extra = 1, nn = TRUE)
+prp(airct, type = 2, extra = 1, nn = TRUE, fallen.leaves = TRUE)
+```
+
+# Tree Graph
+
+```{r Tree_Graph}
+library(treemap)
+data(business)
+treegraph(business, index=c("NACE1", "NACE2", "NACE3", "NACE4"), show.labels=FALSE)
+```
+
+# Graph
+
+```{r Graph}
+library("igraph")
+mis_file = "lesmiserables.txt"
+mis_graph = read.graph(mis_file, format = "gml")
+mis_graph = permute.vertices(mis_graph, order(V(mis_graph)$group))
+
+plot(mis_graph, vertex.size = 5, edge.width = E(mis_graph)$value, vertex.color = V(mis_graph)$group)
+
+plot(mis_graph, layout = layout.fruchterman.reingold, vertex.size = 5, edge.width = E(mis_graph)$value, vertex.color = V(mis_graph)$group)
+
+plot(mis_graph, layout = layout.circle, vertex.size = 5, edge.width = E(mis_graph)$value, vertex.color = V(mis_graph)$group)
+```
+
+```{r visNetwork, cache = FALSE}
+library(visNetwork)
+
+Nodes <- igraph::get.data.frame(mis_graph, what = "vertices")
+Edges <- igraph::get.data.frame(mis_graph, what = "edges")
+Edges <- dplyr::mutate(Edges, from = Nodes[from,"id"], to = Nodes[to,"id"])
+
+visNetwork(nodes = Nodes,
+           edges = Edges) %>%
+  visOptions(highlightNearest = TRUE) %>%
+  visPhysics(solver = "barnesHut")
+```
+
+# Arc diagram
+
+```{r Arcdiagram}
+library(arcdiagram)
+edgelist = get.edgelist(mis_graph)
+vlabels = get.vertex.attribute(mis_graph, "label")
+vgroups = get.vertex.attribute(mis_graph, "group")
+vfill = get.vertex.attribute(mis_graph, "fill")
+vborders = get.vertex.attribute(mis_graph, "border")
+degrees = degree(mis_graph)
+values = get.edge.attribute(mis_graph, "value")
+library(reshape)
+x = data.frame(vgroups, degrees, vlabels, ind = 1:vcount(mis_graph))
+y = arrange(x, desc(vgroups), desc(degrees))
+new_ord = y$ind
+arcplot(edgelist, ordering = new_ord, labels = vlabels, cex.labels = 0.8,
+        show.nodes = TRUE, col.nodes = vborders, bg.nodes = vfill,
+        cex.nodes = log(degrees) + 0.5, pch.nodes = 21, lwd.nodes = 2, line = -0.5,
+        col.arcs = hsv(0, 0, 0.2, 0.25), lwd.arcs = 1.5 * values)
+```
+
+#  Adjacency Matrix
+
+```{r Adjacency_Matrix}
+edges <- data.frame( from = edgelist[,1], to = edgelist[,2], values = values)
+edgessym <- data.frame( from = edgelist[,2], to = edgelist[,1], values = values)
+edges <- unique(rbind(edges, edgessym))
+
+ggplot(data = edges, aes(x = factor(from, labels = vlabels), 
+                         y = factor(to, labels = vlabels), 
+                         color = log(values+1))) +
+  geom_raster() + xlab("") + ylab("") +
+  theme(axis.text.x = element_text(angle = 270, hjust = 0))
+```
+
+# Flow
+
+```{r Flow}
+library(riverplot)
+data(minard )
+nodes <- minard$nodes
+edges <- minard$edges
+colnames( nodes ) <- c( "ID", "x", "y" )
+colnames( edges ) <- c( "N1", "N2", "Value", "direction" )
+
+# color the edges by troop movement direction
+edges$col <- c( "#e5cbaa", "black" )[ factor( edges$direction ) ]
+# color edges by their color rather than by gradient between the nodes
+edges$edgecol <- "col"
+
+# generate the riverplot object and a style
+river <- makeRiver( nodes, edges )
+style <- list( edgestyle= "straight", nodestyle= "invisible" )
+
+# plot the generated object
+plot( river, lty= 1, default_style= style )
+# Add cities
+with( minard$cities, points( Longitude, Latitude, pch= 19 ) )
+with( minard$cities, text( Longitude, Latitude, Name, adj= c( 0, 0 ) ) )
+```
+
+# 3D
+
+```{r 3D, webgl = TRUE}
+library(rgl)
+
+plot3d(mtcars[c(3,6,1)])
+
+plot3d(small_diamonds[c(1,2,7)])
+```
+
+
+# Animation
+
+```{r Animation, fig.show = 'animate'}
+for (year in names(st)[7:37]) { 
+plot(ggplot(filter(st_melt, variable == year), aes(long, lat, group=group, fill = value)) +
+    geom_polygon() + scale_fill_continuous(limits = c(20,80)) + facet_wrap(~ variable))
+}
+```
+
+# Javascript
+
+```{r GoogleVis, results='asis'}
+# Data source: http://goo.gl/vcKo6y
+UKvisits <- data.frame(origin=c(
+  "France", "Germany", "USA",
+  "Irish Republic", "Netherlands",
+  "Spain", "Italy", "Poland",
+  "Belgium", "Australia", 
+  "Other countries", rep("UK", 5)),
+  visit=c(
+    rep("UK", 11), "Scotland",
+    "Wales", "Northern Ireland", 
+    "England", "London"),
+  weights=c(
+    c(12,10,9,8,6,6,5,4,4,3,33)/100*31.8, 
+    c(2.2,0.9,0.4,12.8,15.5)))
+## Uncomment the next 3 lines to install the developer version of googleVis
+# install.packages(c("devtools","RJSONIO", "knitr", "shiny", "httpuv"))
+# library(devtools)
+# install_github("mages/googleVis")
+require(googleVis)
+plot(
+  gvisSankey(UKvisits, from="origin", 
+             to="visit", weight="weight",
+             options=list(
+               height=250,
+               sankey="{link:{color:{fill:'lightblue'}}}"
+               )),
+  tag = "chart"
+)
+
+```
+
+```{r Plotly}
+library(plotly)
+gg <- ggplot(data = mtcars, aes(x = hp, y = mpg, size = gear, color = cyl, shape = factor(am))) + geom_point() + scale_size_continuous(range = c(4,8))
+```
+
+```{r Plotly2, cache = FALSE}
+library(plotly)
+ggplotly(gg)
+```
+
+```{r Bokeh, cache = FALSE}
+library(rbokeh)
+p <- figure() %>% ly_points(data = dplyr::mutate(mtcars, cyl = factor(cyl)), x = hp, y = mpg, color = cyl, glyph = factor(am), hover = mtcars)
+p
+```
+
+```{r Leaflet, cache = FALSE}
+library(leaflet)
+
+ColorPal <- colorNumeric(scales::seq_gradient_pal(low = "#132B43", high = "#56B1F7", space = "Lab"), domain = c(0,1))
+m <- leaflet(data = Stations) %>%
+  addTiles() %>%
+  addCircles(~ position.lng, ~ position.lat, popup = ~ sprintf("<b> Available bikes: %s</b>",as.character(available_bikes)),
+                   radius = ~ sqrt(bike_stands),
+            color = ~ ColorPal( available_bikes / (available_bikes + available_bike_stands)),
+            stroke = TRUE, fillOpacity = 0.75)
+m
+```
+
+# Big Data
+
+```{r BigData}
+airline<-read.csv("airlineJan.csv")
+head(airline)
+nrow(airline)
+dim(airline)
+
+library(bigvis)
+library(ggplot2)
+detach("package:dplyr")
+library(plyr)
+library(dplyr)
+library(grid)
+library(reshape2)
+library(scales)
+library(memoise)
+library(hexbin)
+
+
+delay <- airline$ArrDelay
+dist <- airline$Distance
+time <- airline$AirTime
+
+speed <- dist / time * 60
+
+ggplot(data = airline, aes(x = dist, y = time)) + geom_point()
+hexbinplot(time~dist)
+```
+
