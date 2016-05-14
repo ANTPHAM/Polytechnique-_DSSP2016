@@ -1,0 +1,745 @@
+---
+title: "Visualization - London Fire Brigad"
+author: "Erwan Le Pennec / Eric Matzner"
+date: "Spring 2016"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(warning = FALSE, message = FALSE, cache = TRUE, autodep = TRUE, tidy = FALSE)
+```
+
+In this lab, we will use the __LFB__ dataset to experiment with __ggplot2__. To read it, we will capitalize on the previous lab.
+
+Let's first install if necessary (and load) all the required packages.
+```{r Libraries, cache = FALSE}
+pacman::p_load("readxl", "magrittr", "dplyr", "lubridate", "purrr", "tidyr", "reshape2",
+               "ggplot2", "plotly", "ggmap", "rgdal", "rgeos", "maptools",
+               "viridis", "geomnet", "visNetwork", "FactoMineR", "ggrepel")
+```
+
+We can now read the data.
+
+```{r ReadAndFix}
+LFB1 <- read_excel("../LFB/SQL LFB Incident data from Jan2009 - Dec2012.xlsx", 
+              na = "NULL")
+LFB2 <- read_excel("../LFB/201601 SQL LFB Incident data from Jan2013 - Jan2016.xlsx", 
+              na = "NULL")
+LFB <- rbind_list(LFB1, LFB2)
+rm(LFB1,LFB2)
+LFB %<>% mutate(IncidentNumber = as.integer(round(IncidentNumber)))
+LFB %<>% mutate(DateOfCall = DateOfCall + (TimeOfCall - floor_date(TimeOfCall, "day"))) %>%
+  select(-TimeOfCall)
+LFB %<>% mutate(IncGeo_BoroughName = stringr::str_to_title(IncGeo_BoroughName),
+           IncGeo_WardName = stringr::str_to_title(IncGeo_WardName))
+
+LFB[] %<>% map_if(is_character, factor)
+```
+
+# Basic Plots
+
+## Bar plot, Pie plot and Cleveland plot
+
+We will start by the most basic plot: the bar plot which corresponds to the plot of counts of a categorical variable. __ggplot2__ proposes a systematic approach based on a _grammar of graphics_ to describe the plot. We use __ggplot__ to specify the dataset uses as well as the _aesthetics_, i.e. the variables to display with their mapping. Once this is done, one can add a _geometry_ to obtain the plot. For a bar plot of the __IncidentGroup__, we start by specifying that the data are in __LFB__, then we explains that the __IncidentGroup__ should be mapped to the __x__ axis and finally that we want to use a __bar__ geometry. If you wan to __fill__ the bar, it is just a matter of adding this to the _aesthetic_ list...
+
+```{r Basic}
+ggplot(data = LFB, aes(x = IncidentGroup)) + geom_bar()
+
+ggplot(data = LFB, aes(x = IncidentGroup, fill = IncidentGroup)) + geom_bar()
+```
+
+Note that __geom\_bar__ automatically compute a __count__ statistics for each _level_ of __IncidentGroup__. We could have obtain the same plot with an explicit computation of those counts.
+
+```{r ExplicitCount}
+ggplot(data = {LFB %>% group_by(IncidentGroup) %>% summarize(count = n())},
+       aes(x = IncidentGroup, fill = IncidentGroup, y = count)) + geom_bar(stat = "identity")
+```
+
+A __pie__ plot corresponds to a stacked bar plot in polar coordinated and is described as this in __ggplot2__. Note that the distaste of H. Wickham to pie plots may be seen in this syntax...
+
+```{r Pie}
+ggplot(data = LFB, aes(x = 1, fill= IncidentGroup)) + geom_bar()
+
+ggplot(data = LFB, aes(x = 1, fill= IncidentGroup)) + geom_bar() +
+  xlab("") + scale_x_discrete(labels = NULL)
+
+ggplot(data = LFB, aes(x = 1, fill= IncidentGroup)) + geom_bar() +
+  xlab("") + scale_x_discrete(labels = NULL) +
+  coord_polar(theta = "y")
+```
+
+__Exercise:__ Visualize the repartition of the __IncGeo\_BoroughName__ with your favorite visualization.
+
+```{r ExoBarPlot}
+ggplot(data = LFB, aes(x = IncGeo_BoroughName)) + geom_bar()
+
+ggplot(data = LFB, aes(x = IncGeo_BoroughName)) + geom_bar() + coord_flip()
+
+ggplot(data = LFB, aes(x = reorder(IncGeo_BoroughName, IncGeo_BoroughName, length))) +
+  geom_bar() + coord_flip() + xlab("IncGeo_BoroughName")
+```
+
+The Cleveland dots are a _lighter_ way to display counts: 
+
+```{r Cleveland}
+ggplot(data = LFB, aes(x = reorder(IncGeo_BoroughName, IncGeo_BoroughName, length))) +
+  geom_point(stat = "count") + coord_flip() +
+  theme(panel.grid.major.x = element_blank() ,
+        panel.grid.major.y = element_line(linetype = "dotted", color = "darkgray")) +
+  xlab("IncGeo_BoroughName")
+```
+
+
+__Interactivity:__ __plotly__ provides an easy way to convert a __ggplot2__ graph into a interactive one...
+
+```{r Plotly, cache = FALSE}
+p <- ggplot(data = LFB, aes(x = reorder(IncGeo_BoroughName, IncGeo_BoroughName, length))) +
+  geom_point(stat = "count") + coord_flip() +
+  theme(panel.grid.major.x = element_blank() ,
+        panel.grid.major.y = element_line(linetype = "dotted", color = "darkgray")) +
+  xlab("IncGeo_BoroughName")
+ggplotly(p)
+```
+
+
+## Facetting
+
+A very powerful feature of __ggplot2__ is the ease with which one can _facet_ a given graph in a _multiplicity_ of _small_ graphs.
+
+For instance, one can look at the variation of the __IncidentGroup__ with respect to the day of the week by adding a few elements to the corresponding previous graph.
+
+```{r Facet}
+ggplot(data = mutate(LFB, Wday = wday(DateOfCall, label = TRUE)), aes(x = IncidentGroup, fill = IncidentGroup)) + geom_bar() + facet_wrap(~ Wday)
+```
+
+__Exercise:__ Obtain a similar plot with the proportion instead of the raw counts? Can you obtain a different view with the same data?
+
+```{r FacetProportion}
+LFBtmp <- LFB %>% mutate(Wday = wday(DateOfCall, label = TRUE)) %>% group_by(Wday, IncidentGroup) %>%
+  summarize(N = n()) %>% ungroup() %>% complete(IncidentGroup, Wday, fill = list(N = 0)) %>% group_by(Wday) %>%
+  mutate(Prop = N/sum(N))
+ggplot(data = LFBtmp, aes(x = IncidentGroup, fill = IncidentGroup, y = Prop)) + geom_bar(stat = "identity") + facet_wrap(~ Wday)
+
+ggplot(data = LFBtmp, aes(x = Wday, fill = IncidentGroup, y = Prop)) + geom_bar(stat = "identity") + facet_wrap(~ IncidentGroup)
+
+ggplot(data = LFBtmp, aes(x = Wday, fill = IncidentGroup, y = Prop)) + geom_bar(stat = "identity")
+```
+
+## Histogram and density
+
+In this section, we focus on plots related to a single continuous variable: histograms, which are often confused with bar plots, and density estimation. Both try to visualize the _repartition_ of the values of a variable. Here, we will look at the __FirstPumpArriving\_AttendanceTime__.
+
+```{r HistogramDensity}
+ggplot(data = LFB, aes(x = FirstPumpArriving_AttendanceTime)) + geom_histogram()
+
+ggplot(data = LFB, aes(x = FirstPumpArriving_AttendanceTime)) + geom_density()
+```
+
+The main difference with bar plots is that there is no obvious bin numbers, or bandwidth for the density. This parameter needs to be specified (correctly?).
+
+```{r HistogramDensityAdjust}
+ggplot(data = LFB, aes(x = FirstPumpArriving_AttendanceTime)) + geom_histogram(bins = 100)
+
+ggplot(data = LFB, aes(x = FirstPumpArriving_AttendanceTime)) + geom_density(adjust = .1)
+```
+
+__Exercise:__ Do this __FirstPumpArriving\_AttendanceTime__ depends on the week day?
+
+```{r DensityColor}
+ggplot(data = mutate(LFB, Wday =  wday(DateOfCall, label = TRUE)), aes(x = FirstPumpArriving_AttendanceTime, color = Wday)) + geom_density(adjust = .5) + facet_wrap(~ Wday)
+
+ggplot(data = mutate(LFB, Wday =  wday(DateOfCall, label = TRUE)), aes(x = FirstPumpArriving_AttendanceTime, color = Wday)) + geom_density(adjust = .5)
+```
+
+###Scatter Plot
+
+In this family of plot, we are looking at the value of one variable with respect to another. We can for instance look at the number of incident for a single day with respect to the number of incident the day before.
+
+```{r Relation}
+LFBtmp <- LFB %>% group_by(DayOfCall = ceiling_date(DateOfCall, "day")) %>% summarize(N = n())
+
+ggplot(data = LFBtmp, aes(x = lag(N), y = N)) + geom_point()
+
+LFBtmp %<>% mutate(Wday = wday(DayOfCall, label = TRUE))
+
+ggplot(data = LFBtmp, aes(x = lag(N), y = N, color = Wday)) + geom_point()
+
+ggplot(data = LFBtmp, aes(x = lag(N), y = N, color = Wday)) + geom_point() + facet_wrap(~ Wday)
+```
+
+The roles of the two are symmetric, except when a smoother is used. Here is an example of a regression of a smoother used first in the conventional way (y with respect to x) and then the other way around.
+
+```{r Smooth}
+ggplot(data = LFBtmp, aes(x = lag(N), y = N)) + geom_point() + geom_smooth()
+
+ggplot(data = LFBtmp, aes(x = lag(N), y = N, color = Wday)) + geom_point() + geom_smooth()
+
+ggplot(data = LFBtmp, aes(x = lag(N), y = N, color = Wday)) + geom_point() + geom_smooth() +
+  facet_wrap(~ Wday)
+
+
+ggplot(data = LFBtmp, aes(y = lag(N), x = N)) + geom_point() + geom_smooth() + coord_flip()
+
+ggplot(data = LFBtmp, aes(y = lag(N), x = N, color = Wday)) + geom_point() + geom_smooth() + coord_flip()
+
+ggplot(data = LFBtmp, aes(y = lag(N), x = N, color = Wday)) + geom_point() + geom_smooth() +
+  coord_flip() + facet_wrap(~ Wday)
+```
+
+__Exercise:__ Visualize the relationship between the __FirstPumpArriving\_AttendanceTime__ and the __SecondPumpArriving\_AttendanceTime__.
+
+```{r ExoScatter}
+ggplot(data = LFB, aes(x = FirstPumpArriving_AttendanceTime, y = SecondPumpArriving_AttendanceTime)) + geom_point(alpha = .1)
+
+ggplot(data = LFB, aes(x = FirstPumpArriving_AttendanceTime, y = SecondPumpArriving_AttendanceTime)) + geom_hex()
+```
+
+Note that we have used a _big data_ trick, we have replaced a plot with too many points by a _density_ estimate, here with a hexagonal grid. 
+
+## Line Plot
+
+Line plots are the most natural representation when the _x_ variable is ordered. We can even look at the _trend_ using a _smoother_. For instance, we can look at the evolution of the number of daily incidents .
+
+```{r LinePlot}
+LFBtmp <- LFB %>% group_by(DayOfCall = ceiling_date(DateOfCall, "day")) %>% summarize(N = n())
+
+ggplot(data = LFBtmp, aes(x = DayOfCall, y = N)) + geom_line()
+
+ggplot(data = LFBtmp, aes(x = DayOfCall, y = N)) + geom_line() + geom_smooth()
+```
+
+__Exercise:__ Is the decay similar for very __IncidentGroup__?
+
+```{r LinePlotGroup}
+LFBtmp <- LFB %>% group_by(DayOfCall = ceiling_date(DateOfCall, "day"), IncidentGroup) %>% summarize(N = n()) 
+
+ggplot(data = LFBtmp, aes(x = DayOfCall, y = N, color = IncidentGroup)) + geom_line()
+
+ggplot(data = LFBtmp, aes(x = DayOfCall, y = N, color = IncidentGroup)) + geom_line() + geom_smooth()
+
+ggplot(data = LFBtmp, aes(x = DayOfCall, y = N, color = IncidentGroup)) + geom_line() + geom_smooth() + facet_wrap(~ IncidentGroup)
+
+LFBtmp %<>% group_by(IncidentGroup) %>% mutate(RelN  = N/mean(N))
+
+ggplot(data = LFBtmp, aes(x = DayOfCall, y = RelN, color = IncidentGroup)) + geom_line() + geom_smooth()
+
+ggplot(data = LFBtmp, aes(x = DayOfCall, y = RelN, color = IncidentGroup)) + geom_smooth()
+```
+
+
+__Interactivity:__ __rbokeh__ provides a __R__ interface to the Python __bokeh__ library.
+
+```{r RBokeh, cache = FALSE}
+pacman::p_load("rbokeh")
+
+LFBtmp2 <- LFBtmp %>% ungroup() %>% mutate(IncidentGroup = ifelse(is.na(IncidentGroup), "Na", as.character(IncidentGroup))) %>% group_by(IncidentGroup) %>% do({tmp <- lowess(.$DayOfCall, .$RelN); data.frame(DayOfCall = .$DayOfCall, RelN = .$RelN, SmoothRelN = tmp$y) })
+
+figure(data = LFBtmp2) %>% ly_lines(x = DayOfCall, y = RelN, color = IncidentGroup) %>%
+  ly_lines(x = DayOfCall, y = SmoothRelN, color = IncidentGroup, width = 4)
+
+figure(data = LFBtmp2) %>% ly_lines(x = DayOfCall, y = SmoothRelN, color = IncidentGroup, width = 4)
+
+fig <- list()
+ggplotColours <- function(n=6, h=c(0, 360) +15){
+  if ((diff(h)%%360) < 1) h[2] <- h[2] - 360/n
+  hcl(h = (seq(h[1], h[2], length = n)), c = 100, l = 65)
+}
+colors <- ggplotColours(n = 4)
+names(colors) <- unique(LFBtmp2$IncidentGroup)
+LFBtmp2 %<>% mutate(Color = colors[IncidentGroup])
+for (name in unique(LFBtmp2$IncidentGroup)) {
+  tmp <- figure(data = filter(LFBtmp2, IncidentGroup == name)) %>% ly_lines(x = DayOfCall, y = RelN, color = Color) %>%
+  ly_lines(x = DayOfCall, y = SmoothRelN, color = Color, width = 4)
+  fig <- c(fig, list(tmp))
+}
+grid_plot(fig, same_axes = TRUE, ncol = 1)
+```
+
+
+## Parallel Plot and Radar Plot
+
+Parallel plots and radar plots are convenient way to visualize several variable at a time. The concept is very simple: compute for each observation a set of variables having a comparable range and display them as if they were ordered. 
+
+```{r ParallelPlot}
+LFBtmp <- LFB %>% group_by(IncGeo_BoroughName, IncidentGroup,
+                           Wday = wday(DateOfCall, label = TRUE), Hour = hour(DateOfCall)) %>%
+  summarize(N = n()) %>% ungroup() %>% complete(IncGeo_BoroughName, IncidentGroup,
+                           Wday, Hour, fill = list(N = 0))
+
+ggplot(data = LFBtmp, aes(x = interaction(IncidentGroup, Wday, Hour, sep = "_", lex.order = TRUE), y = N, color = IncGeo_BoroughName, group = IncGeo_BoroughName)) + geom_line() + scale_x_discrete(labels = NULL)
+
+ggplot(data = LFBtmp, aes(x = interaction(IncidentGroup, Wday, Hour, sep = "_", lex.order = TRUE), y = N, color = IncGeo_BoroughName, group = IncGeo_BoroughName)) + geom_line() + facet_wrap(~ IncGeo_BoroughName) + guides(color = FALSE) + scale_x_discrete(labels = NULL)
+```
+
+The radar plot corresponds to the same idea but in a polar representation!
+
+```{r RadarPlot}
+ggplot(data = LFBtmp, aes(x = interaction(IncidentGroup, Wday, Hour, sep = "_", lex.order = TRUE), y = N, color = IncGeo_BoroughName, group = IncGeo_BoroughName)) + geom_line() + facet_wrap(~ IncGeo_BoroughName) + guides(color = FALSE) + coord_polar() + scale_x_discrete(labels = NULL)
+```
+
+__Exercise:__ Can you remove the size effect by comparing the proportions?
+
+```{r Proportions}
+LFBtmp <- LFB %>% group_by(IncGeo_BoroughName, IncidentGroup,
+                           Wday = wday(DateOfCall, label = TRUE), Hour = hour(DateOfCall)) %>%
+  summarize(N = n()) %>% ungroup() %>% complete(IncGeo_BoroughName, IncidentGroup,
+                           Wday, Hour, fill = list(N = 0)) %>%
+  group_by(IncGeo_BoroughName) %>% mutate(Prop = N/sum(N))
+
+ggplot(data = LFBtmp, aes(x = interaction(IncidentGroup, Wday, Hour, sep = "_", lex.order = TRUE), y = Prop, color = IncGeo_BoroughName, group = IncGeo_BoroughName)) + geom_line() + scale_x_discrete(labels = NULL)
+
+ggplot(data = LFBtmp, aes(x = interaction(IncidentGroup, Wday, Hour, sep = "_", lex.order = TRUE), y = Prop, color = IncGeo_BoroughName, group = IncGeo_BoroughName)) + geom_line() + facet_wrap(~ IncGeo_BoroughName) + guides(color = FALSE) + scale_x_discrete(labels = NULL)
+
+ggplot(data = LFBtmp, aes(x = interaction(IncidentGroup, Wday, Hour, sep = "_", lex.order = TRUE), y = Prop, color = IncGeo_BoroughName, group = IncGeo_BoroughName)) + geom_line() + facet_wrap(~ IncGeo_BoroughName) + guides(color = FALSE) + coord_polar() + scale_x_discrete(labels = NULL)
+```
+
+
+# Maps and choropleth
+
+## Maps
+
+We have already used maps in the first lab. We will see how to combine them with density estimation. We need first to convert the coordinates to the metric system.
+
+```{r Conversion, cache.vars = "LFB"}
+wgs84 = "+init=epsg:4326"
+bng = '+proj=tmerc +lat_0=49 +lon_0=-2 +k=0.9996012717 +x_0=400000 +y_0=-100000 +ellps=airy +datum=OSGB36 +units=m +no_defs'
+
+ConvertCoordinates <- function(easting,northing) {
+  out = cbind(long_tmp = easting,lat_tmp = northing)
+  mask = !is.na(easting)
+  sp <- sp::spTransform(sp::SpatialPoints(list(easting[mask],northing[mask]),proj4string=sp::CRS(bng)),sp::CRS(wgs84))
+  out[mask,]=sp@coords
+  out
+}
+
+LFB %<>% do({
+  tmp <- ConvertCoordinates(.$Easting_rounded, .$Northing_rounded);
+  mutate(., long_rounded = tmp[,1], lat_rounded = tmp[,2])})
+
+LFB %<>% do({
+  tmp <- ConvertCoordinates(.$Easting_m, .$Northing_m);
+  mutate(., long = tmp[,1], lat = tmp[,2])})
+```
+
+We can now plot a map and add the position of the events.
+
+```{r LondonMap}
+mapLondon <- get_map(location = c(-0.21, 51.431, 0.01, 51.57), source = "google")
+ggmap(mapLondon) + coord_quickmap(expand = FALSE)
+
+ggmap(mapLondon) + geom_point(data = filter(LFB, !is.na(lat_rounded)), aes(x = long_rounded, y = lat_rounded), alpha = .01) +
+                                 coord_quickmap(expand = FALSE)
+```
+
+As it was the case in a previous scatter plot, the number of points is so large than a density estimation leads to a better view.
+
+```{r DensityMap}
+ggmap(mapLondon) + stat_density_2d(data = filter(LFB, !is.na(lat_rounded)), 
+                                   aes(x = long_rounded, y = lat_rounded, 
+                                       alpha = ..level.. ,  fill = ..level..), 
+                                   contour = TRUE, geom = "polygon") +
+  scale_alpha_continuous(guide = "legend") + scale_fill_continuous(guide = "legend") + coord_quickmap(expand = FALSE)
+```
+
+__Exercise:__ Is the density profile similar for all the __IncidentGroup__s?
+
+```{r DensityMapGroup}
+ggmap(mapLondon) + stat_density_2d(data = filter(LFB, !is.na(lat_rounded)), 
+                                    aes(x = long_rounded, y = lat_rounded, 
+                                        alpha = ..level.. ,  fill = ..level..), 
+                                    contour = TRUE, geom = "polygon") +
+  scale_alpha_continuous(guide = "legend") + scale_fill_continuous(guide = "legend") +
+  facet_wrap(~IncidentGroup) + coord_quickmap(expand = FALSE)
+
+```
+
+## Chroropleths
+
+Choropleths are maps in which areas are filled according to a certain value. They can _easily_ be created with __R__ from region boundaries stored in standard GIS format. For instance, we can visualize the number of events for the different Boroughs.
+
+```{r Choropleth}
+boroughs <- readOGR("./statistical-gis-boundaries-london/ESRI", "London_Borough_Excluding_MHW")
+boroughs$NAME <- stringr::str_to_title(boroughs$NAME)
+boroughs <- spTransform(boroughs, CRS(wgs84))
+
+boroughs.f <- fortify(boroughs, region = "NAME")
+LFBtmp <- LFB %>% group_by(IncGeo_BoroughName) %>% summarize(N = n())
+boroughs.f2 <- left_join(boroughs.f, LFBtmp,
+                        by = c("id" = "IncGeo_BoroughName"))
+ggplot() +
+  geom_polygon(data = boroughs.f2, aes(x = long, y = lat, group = group,
+                                      fill = N)) +
+  coord_map() + scale_fill_viridis()
+```
+
+We can also add an underlying map.
+
+```{r ChoroplethMap}
+bb <- as.vector(boroughs@bbox)
+mapLondonChoro <- get_map(location = bb, maptype = "roadmap", color = "bw")
+
+ggmap(mapLondonChoro, extent = "device") +
+  geom_polygon(data = boroughs.f2, aes(x = long, y = lat, group = group,
+                                      fill = N), alpha = .9) +
+  coord_map() + scale_fill_viridis()
+```
+
+__Exercise:__ Do the number depends on the week day, on the __IncidentGroup__, on both?
+
+```{r ChoropletByDay}
+LFBtmp <- LFB %>% group_by(Wday = wday(DateOfCall, label = TRUE), IncGeo_BoroughName) %>% summarize(N = n())
+boroughs.f2 <- left_join(boroughs.f, LFBtmp,
+                        by = c("id" = "IncGeo_BoroughName"))
+ggmap(mapLondonChoro, extent = "device") +
+  geom_polygon(data = boroughs.f2, aes(x = long, y = lat, group = group,
+                                      fill = N)) +
+  coord_map() + scale_fill_viridis() + facet_wrap(~ Wday)
+
+LFBtmp <- LFB %>% group_by(IncidentGroup, IncGeo_BoroughName) %>% summarize(N = n())
+boroughs.f2 <- left_join(boroughs.f, LFBtmp,
+                        by = c("id" = "IncGeo_BoroughName"))
+ggmap(mapLondonChoro, extent = "device") +
+  geom_polygon(data = boroughs.f2, aes(x = long, y = lat, group = group,
+                                      fill = N)) +
+  coord_map() + scale_fill_viridis() + facet_wrap(~ IncidentGroup)
+
+LFBtmp <- LFB %>% group_by(IncidentGroup, Wday = wday(DateOfCall, label = TRUE), IncGeo_BoroughName) %>% summarize(N = n())
+boroughs.f2 <- left_join(boroughs.f, LFBtmp,
+                        by = c("id" = "IncGeo_BoroughName"))
+ggmap(mapLondonChoro, extent = "device") +
+  geom_polygon(data = boroughs.f2, aes(x = long, y = lat, group = group,
+                                      fill = N)) +
+  coord_map() + scale_fill_viridis() + facet_grid(IncidentGroup ~ Wday)
+```
+
+A danger with the choropleths is that the size of the region changes the perception of the values. A possible correction is to replace a quantity by its density, if this makes sense...
+
+```{r AreaCorrection}
+boroughsArea <- data.frame(IncGeo_BoroughName = boroughs$NAME, Area = geosphere::areaPolygon(boroughs))
+LFBtmp %<>% left_join(boroughsArea) %>% mutate(Dens = N/Area)
+boroughs.f2 <- left_join(boroughs.f, LFBtmp,
+                        by = c("id" = "IncGeo_BoroughName"))
+ggmap(mapLondonChoro, extent = "device") +
+  geom_polygon(data = boroughs.f2, aes(x = long, y = lat, group = group,
+                                      fill = Dens)) +
+  coord_map() + scale_fill_viridis() + facet_grid(IncidentGroup ~ Wday)
+```
+
+__Interactivity:__ Using the __leaflet__ package it is easy to obtain an interactive choropleth.
+
+```{r Leaflet, cache = FALSE}
+pacman::p_load("leaflet")
+LFBtmp <- LFB %>% group_by(IncGeo_BoroughName) %>% summarize(N = n()) %>% left_join(boroughsArea) %>% mutate(Dens = N/Area)
+
+boroughs@data %<>% left_join(LFBtmp, by = c("NAME" = "IncGeo_BoroughName"))
+
+pal <- colorNumeric(viridis(16), NULL)
+boroughspopup <- paste0("<strong>Borough Name: </strong>", 
+                      boroughs$NAME, 
+                      "<br><strong>Event density: </strong>", 
+                      format(boroughs$Dens, digits = 3))
+
+
+leaflet(data = boroughs) %>% addTiles() %>% addPolygons(fillColor = ~pal(Dens), fillOpacity = .8, popup = boroughspopup)
+```
+
+# Graph
+
+Graphs are useful to visualize interactions. For instance, we can study the relation between the Stations measured by the number of times a station helps another. We should first prepare the _graph_ by computing those numbers of interactions and preparing two data frame, one for the nodes and one for the edges.
+
+```{r Graph}
+LFBNetwork <- LFB %>% group_by(FirstPumpArriving_DeployedFromStation, SecondPumpArriving_DeployedFromStation) %>% summarize(N = n()) %>% ungroup() 
+LFBNetwork %<>% filter(FirstPumpArriving_DeployedFromStation != "", SecondPumpArriving_DeployedFromStation != "")
+LFBNetwork[] %<>% map_if(is.factor, as.character)
+
+LFBNodes <- data.frame(id  = factor(with(LFBNetwork, unique(c(FirstPumpArriving_DeployedFromStation,SecondPumpArriving_DeployedFromStation)))))
+LFBNodes <- LFBNetwork %>% group_by(id = factor(SecondPumpArriving_DeployedFromStation)) %>% summarize(value = sum(N)) %>% right_join(LFBNodes) %>% mutate(label = id)
+
+LFBEdges <- transmute(LFBNetwork,
+                      from = factor(SecondPumpArriving_DeployedFromStation, levels = unique(c(FirstPumpArriving_DeployedFromStation,SecondPumpArriving_DeployedFromStation))),
+                      to = factor(FirstPumpArriving_DeployedFromStation, levels = levels(from)),
+                      value = N)
+```
+
+We can now use the package __igraph__ to obtain a first plot of the graph.
+
+```{r Igraph}
+pacman::p_load("igraph")
+LFBGraph <- graph_from_data_frame(LFBEdges, vertices = LFBNodes)
+plot(LFBGraph)
+```
+
+The _experimental_ package __ggraph__ allows a very fine control of the visualization of a graph.
+
+```{r GGraph}
+pacman::p_load_gh("thomasp85/ggforce","thomasp85/ggraph")
+ggraph(LFBGraph, layout = "igraph", algorithm = "kk") +
+  geom_node_point(aes(size = value, color = factor(name)), alpha = .5) +
+  geom_edge_fan(aes(size = value, edge_colour = factor(from)), edge_alpha = .5, arrow = arrow(length = unit(.01, "npc"))) +
+  geom_edge_loop(aes(size = value, edge_colour = factor(from)), edge_alpha = .5, arrow = arrow(length = unit(.01, "npc"))) +
+  geom_node_text(aes(label = label), repel = TRUE) +
+  xlab(NULL) + ylab(NULL) + scale_x_continuous(breaks = NULL) + scale_y_continuous(breaks = NULL) + guides(color = FALSE, edge_colour = FALSE, size = FALSE)
+```
+
+__Exercise:__ Use __geom\_scatter__ to visualize the same graph through its adjacency matrix.
+```{r Adjacency}
+ggplot(LFBEdges, aes(x = to, y = from, color = value)) + geom_raster()
+```
+
+__Interactivity:__ An interactive visualization of the graph is possible thanks to the __visNetwork__ package for instance. Note that this is quite CPU demanding and thus disabled here...
+
+```{r InteractiveGraph, cache = FALSE, eval = FALSE}
+visNetwork::visNetwork(LFBNodes, LFBEdges) %>% visNetwork::visLayout(improvedLayout = FALSE) %>% visNetwork::visNodes(font = '28px')
+```
+
+
+# Dimension Reduction
+
+## Principal Component Analysis
+
+PCA is the most classical dimension reduction method. It corresponds to the search of a best _projection_ hyperplane in term of approximation error. We will use __FactoMineR__ to compute it. We propose here to visualize the Borough. We need first to assign a _vector_ to each Borough. We will start by using the number of events by week day. We need first to compute those numbers and to transform the resulting _long_ table into a _wide_ table.
+
+```{r PCA}
+LFBBoroughWday <- LFB %>% group_by(IncGeo_BoroughName, Wday = wday(DateOfCall, label = TRUE)) %>% summarize(N = n())
+
+LFBBoroughWdayW <- dcast(LFBBoroughWday, IncGeo_BoroughName ~ Wday, value.var = "N", fill = 0)
+row.names(LFBBoroughWdayW) <- LFBBoroughWdayW[,"IncGeo_BoroughName"]
+LFBBoroughWdayW %<>% select(-IncGeo_BoroughName)
+
+PcaWday <- PCA(LFBBoroughWdayW, scale.unit = FALSE)
+```
+
+A nicer visualization can be obtained with __ggplot2__ thanks to those (quick and dirty) functions:
+
+```{r PCAGGplot2}
+PcaInd <- function(Pca, axes = c(1,2)) {
+  Ind <- data.frame(Pca$ind$coord) %>% dplyr::add_rownames()
+  ggplot(data = Ind, aes_string(x = sprintf("Dim.%i",axes[1]), y = sprintf("Dim.%i",axes[2]), label = "rowname")) + geom_point() +
+    geom_text_repel() +
+    xlab(sprintf("Dim.%i (%.1f%% of variance)", axes[1], Pca$eig$`percentage of variance`[axes[1]])) +
+    ylab(sprintf("Dim.%i (%.1f%% of variance)",axes[2], Pca$eig$`percentage of variance`[axes[2]]))
+}
+
+PcaCor <- function(Pca, axes = c(1,2)) {
+  circleFun <- function(center = c(0,0),diameter = 2, npoints = 100){
+    r = diameter / 2
+    tt <- seq(0,2*pi,length.out = npoints)
+    xx <- center[1] + r * cos(tt)
+    yy <- center[2] + r * sin(tt)
+    return(data.frame(x = xx, y = yy))
+  }
+  
+  Cor <- data.frame(Pca$var$cor) %>% dplyr::add_rownames()
+  ggplot(data = Cor) + geom_segment(aes_string(x= "0", y = "0", xend = sprintf("Dim.%i",axes[1]), yend = sprintf("Dim.%i",axes[2])), arrow = grid::arrow()) +
+    geom_text(aes_string(x = sprintf("Dim.%i",axes[1]), y = sprintf("Dim.%i",axes[2]), label = "rowname"), vjust = "outward", hjust = "outward") +
+    xlab(sprintf("Dim.%i (%.1f%% of variance)", axes[1], Pca$eig$`percentage of variance`[axes[1]])) +
+    ylab(sprintf("Dim.%i (%.1f%% of variance)", axes[2], Pca$eig$`percentage of variance`[axes[2]])) +
+    geom_path(data = circleFun(), aes(x = x, y = y)) + lims(x=c(-1.1,1.1), y = c(-1.1,1.1)) + coord_equal()
+}
+
+
+PcaInd(PcaWday)
+PcaCor(PcaWday)
+```
+
+A very important issue when dealing with PCA is the choice of the metric. So far, we have used the usual euclidean metric. A better (?) idea could be to think of those counts as Poissonian and thus use an Anscombe transform to better compare them. In a nutshell, this corrects the fact that the expected variance depends linearly on the number of events.
+
+```{r, PCASqrtN}
+LFBBoroughWdayRW <- dcast(mutate(LFBBoroughWday, SqrtN = sqrt(N)), IncGeo_BoroughName ~ Wday, value.var = "SqrtN", fill = 0)
+row.names(LFBBoroughWdayRW) <- LFBBoroughWdayRW[,"IncGeo_BoroughName"]
+LFBBoroughWdayRW %<>% select(-IncGeo_BoroughName)
+PcaWdayR <- PCA(LFBBoroughWdayRW, scale.unit = FALSE, graph = FALSE)
+PcaInd(PcaWdayR)
+PcaCor(PcaWdayR)
+```
+
+The usual renormalization is a _standardization_ of every column, it does not take into account any knowledge on the dataset but makes the PCA invariant to a linear scaling of any variables.
+
+```{r, PCARescale}
+PcaWdayR2 <- PCA(LFBBoroughWdayW, graph = FALSE)
+PcaInd(PcaWdayR2)
+PcaCor(PcaWdayR2)
+```
+
+In all the previous representation, the first axis corresponds mainly to the _size_ of the Borough. This is not necessarily very informative and we can try to correct this effect by working with proportions or better renormalized proportions.
+
+```{r, PCAProp}
+LFBBoroughWday %<>%
+  group_by(IncGeo_BoroughName) %>% mutate(Prop = N/sum(N))
+
+LFBBoroughWdayPW <- dcast(LFBBoroughWday, IncGeo_BoroughName ~ Wday, value.var = "Prop", fill = 0)
+row.names(LFBBoroughWdayPW) <- LFBBoroughWdayPW[,"IncGeo_BoroughName"]
+LFBBoroughWdayPW %<>% select(-IncGeo_BoroughName)
+PcaWdayP <- PCA(LFBBoroughWdayPW, scale.unit = FALSE, graph = FALSE)
+PcaInd(PcaWdayP)
+PcaCor(PcaWdayP)
+
+RenormChiInner <- function(x) {prop <- mean(x); (x-prop)/sqrt(prop)}
+RenormChi <- function(x) { 
+  mutate_each(x , funs(RenormChiInner))
+}
+LFBBoroughWdayPRW <- RenormChi(LFBBoroughWdayPW)
+row.names(LFBBoroughWdayPRW) <- row.names(LFBBoroughWdayPW)
+PcaWdayPR <- PCA(LFBBoroughWdayPRW, scale.unit = FALSE, graph = FALSE)
+PcaInd(PcaWdayPR)
+PcaCor(PcaWdayPR)
+```
+
+__Exercise:__ How are those last visualization modified when using the number of events by daily hour and week day?
+
+```{r PCALarge}
+LFBBoroughWdayHour <- LFB %>% group_by(IncGeo_BoroughName,
+                                       Wday = wday(DateOfCall, label = TRUE),
+                                       Hour = hour(DateOfCall)) %>%
+  summarize(N = n()) %>% 
+  group_by(IncGeo_BoroughName) %>% mutate(Prop = N/sum(N))
+
+LFBBoroughWdayHourPW <- dcast(LFBBoroughWdayHour, IncGeo_BoroughName ~ Wday + Hour, value.var = "Prop", fill = 0)
+row.names(LFBBoroughWdayHourPW) <- LFBBoroughWdayHourPW[,"IncGeo_BoroughName"]
+LFBBoroughWdayHourPW %<>% select(-IncGeo_BoroughName)
+PcaWdayHourP <- PCA(LFBBoroughWdayHourPW, scale.unit = FALSE, graph = FALSE)
+PcaInd(PcaWdayHourP)
+PcaCor(PcaWdayHourP)
+
+LFBBoroughWdayHourPRW <- RenormChi(LFBBoroughWdayHourPW)
+row.names(LFBBoroughWdayHourPRW) <- row.names(LFBBoroughWdayHourPW)
+PcaWdayHourPR <- PCA(LFBBoroughWdayHourPRW, scale.unit = FALSE, graph = FALSE)
+PcaInd(PcaWdayHourPR)
+PcaCor(PcaWdayHourPR)
+```
+
+PCA can also be used with categorical data.
+
+```{r, PcaCode}
+LFBBoroughCode <- LFB %>% group_by(IncGeo_BoroughName,
+                                              IncidentGroup,  
+                                              StopCodeDescription,
+                                              SpecialServiceType) %>%
+  summarize(N = n())  %>%
+  group_by(IncGeo_BoroughName) %>% mutate(Prop = N/sum(N))
+
+LFBBoroughCodePW <- dcast(LFBBoroughCode, IncGeo_BoroughName ~ IncidentGroup + StopCodeDescription + SpecialServiceType, value.var = "Prop", fill = 0)
+row.names(LFBBoroughCodePW) <- LFBBoroughCodePW[,"IncGeo_BoroughName"]
+LFBBoroughCodePW %<>% select(-IncGeo_BoroughName)
+PcaCodeP <- PCA(LFBBoroughCodePW, scale.unit = FALSE, graph = FALSE)
+
+PcaInd(PcaCodeP)
+PcaCor(PcaCodeP)
+
+LFBBoroughCodePRW <- RenormChi(LFBBoroughCodePW)
+row.names(LFBBoroughCodePRW) <- row.names(LFBBoroughCodePW)
+PcaCodePR <- PCA(LFBBoroughCodePRW, scale.unit = FALSE, graph = FALSE)
+PcaInd(PcaCodePR)
+PcaCor(PcaCodePR)
+```
+
+__Exercice/Interactivy:__ Visualize a map of (a subset of size 5000 of) the events themselves. 
+
+```{r PCAEvents, cache = FALSE}
+LFBEvents <- sample_n(LFB,5000) %>% transmute(Id = row_number(), Events = factor(interaction(IncidentGroup,
+                                              StopCodeDescription,
+                                              SpecialServiceType,
+                                              sep = "_", lex.order = TRUE)),
+                                              N = 1) %>% filter(!is.na(Events))
+LFBEventsW <- dcast(LFBEvents, Id ~ Events, value.var = "N", fill = 0) %>%
+select(-Id)
+LFBEventsRW <- RenormChi(LFBEventsW)
+row.names(LFBEventsRW) <- NULL
+PCAEventsRW <- PCA(LFBEventsRW, scale.unit = FALSE, graph = FALSE)                        
+
+PcaCor(PCAEventsRW)
+
+LFBEvents %<>% mutate(Dim.1 = PCAEventsRW$ind$coord[,"Dim.1"], Dim.2 = PCAEventsRW$ind$coord[,"Dim.2"])
+
+ggplot(data = LFBEvents, aes(x = Dim.1, y = Dim.2, color = Events)) + geom_point(alpha = .2) + guides(color = FALSE)
+
+p <- ggplot(data = LFBEvents, aes(x = Dim.1, y = Dim.2, color = Events)) + geom_jitter(width = .05, height = .15, alpha = .2) + guides(color = FALSE)
+
+ggplotly(p)
+```
+
+So far we have used coordinates stemming from the same source, if we combine coordinates from different sources then a groupwise renormalization is required so that each group has the same _weight_.
+
+```{r PcaHourCode}
+LFBBoroughWdayHourCodePRW <- cbind(LFBBoroughWdayHourPRW, LFBBoroughCodePRW)
+PcaWdayHourCodePR <- PCA(LFBBoroughWdayHourCodePRW, scale.unit = FALSE, graph = FALSE)
+PcaInd(PcaWdayHourCodePR)
+PcaCor(PcaWdayHourCodePR)
+
+RenormGroup <- function(x) {
+  x / sqrt(sum(summarize_each(x, funs(mean(.^2)))))
+}
+
+LFBBoroughWdayHourCodePRGW <- cbind(RenormGroup(LFBBoroughWdayHourPRW), RenormGroup(LFBBoroughCodePRW))
+PcaWdayHourCodePRG <- PCA(LFBBoroughWdayHourCodePRGW, scale.unit = FALSE, graph = FALSE)
+PcaInd(PcaWdayHourCodePRG)
+PcaCor(PcaWdayHourCodePRG)
+```
+
+## Dimension Reduction
+
+We will explore now a few dimension reduction technique starting from the PCA and its variant kPCA.
+
+```{r DimensionReductionPCA}
+PlotBorough <- function(Coord) {
+  ggplot(data = dplyr::mutate_(data.frame(x = Coord[,1], y = Coord[,2], Borough = row.names(Coord))),
+         aes(x = x, y = y, label = Borough)) +
+    geom_point(aes(color = Borough), size = 5) + geom_label_repel() +
+    guides(color = FALSE)
+}
+
+BoroughWdayHourCodePRGPCA <- PcaWdayHourCodePRG$ind$coord
+PlotBorough(BoroughWdayHourCodePRGPCA)
+
+if (!pacman::p_isinstalled("kernlab")) { pacman::p_install("kernlab") }
+
+BoroughWdayHourCodePRGKPCA <- kernlab::pcv(kernlab::kpca(~., data = LFBBoroughWdayHourCodePRGW,
+                    features = 2))
+rownames(BoroughWdayHourCodePRGKPCA) <- rownames(BoroughWdayHourCodePRGPCA)
+PlotBorough(BoroughWdayHourCodePRGKPCA)
+```
+
+We move now to the Locally Linear Embedding principle which can be seen as intermediate between the reconstruction principle and the distance preservation principle.
+
+```{r, LLE}
+if (!pacman::p_isinstalled("lle")) { pacman::p_install("lle") }
+
+BoroughWdayHourCodePRGLLE <- lle::lle(LFBBoroughWdayHourCodePRGW, m = 2, k = 10)$Y
+rownames(BoroughWdayHourCodePRGLLE) <- rownames(BoroughWdayHourCodePRGPCA)
+PlotBorough(BoroughWdayHourCodePRGLLE)
+```
+
+We play now with the MDS and several distances.
+
+```{r, MDS}
+DistBoroughWdayHourCodePRG <- dist(LFBBoroughWdayHourCodePRGW)
+BoroughWdayHourCodePRGMDS <- cmdscale(DistBoroughWdayHourCodePRG, k = 2)
+PlotBorough(BoroughWdayHourCodePRGMDS)
+
+DistBoroughWdayHourCodePRGL <- dist(LFBBoroughWdayHourCodePRGW, method = "minkowski", p = 1)
+BoroughWdayHourCodePRGLMDS <- cmdscale(DistBoroughWdayHourCodePRGL, k = 2)
+PlotBorough(BoroughWdayHourCodePRGLMDS)
+
+DistBoroughWdayHourCodePRM <- dist(LFBBoroughWdayHourCodePRGW, method = "minkowski", p = 3)
+BoroughWdayHourCodePRMMDS <- cmdscale(DistBoroughWdayHourCodePRM, k = 2)
+PlotBorough(BoroughWdayHourCodePRMMDS)
+```
+
+Finally, we can test the t-SNE methodology.
+
+```{r, TSNE}
+if (!pacman::p_isinstalled("Rtsne")) { pacman::p_install("Rtsne") }
+
+BoroughWdayHourCodePRGTSNE <- Rtsne::Rtsne(DistBoroughWdayHourCodePRG, perplexity = 10, pca = FALSE)$Y
+rownames(BoroughWdayHourCodePRGTSNE) <- rownames(BoroughWdayHourCodePRGPCA)
+PlotBorough(BoroughWdayHourCodePRGTSNE)
+
+BoroughWdayHourCodePRGTSNE2 <- Rtsne::Rtsne(DistBoroughWdayHourCodePRG, perplexity = 10, pca = FALSE)$Y
+rownames(BoroughWdayHourCodePRGTSNE2) <- rownames(BoroughWdayHourCodePRGPCA)
+PlotBorough(BoroughWdayHourCodePRGTSNE2)
+
+BoroughWdayHourCodePRGLTSNE <- Rtsne::Rtsne(DistBoroughWdayHourCodePRGL, perplexity = 10, pca = FALSE)$Y
+rownames(BoroughWdayHourCodePRGLTSNE) <- rownames(BoroughWdayHourCodePRGPCA)
+PlotBorough(BoroughWdayHourCodePRGLTSNE)
+```
+
